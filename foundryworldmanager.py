@@ -1,22 +1,15 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Mar 13 14:23:05 2021
-
-@author: jegasus
-
-"""
-
 import hashlib
 import imghdr
 import json
 import mimetypes
 import os
-import pathlib
+from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
 import warnings
+import urllib.parse
 
 from bs4 import BeautifulSoup
 
@@ -165,12 +158,12 @@ def edit_nested_dict_recursive(in_dict, dict_address, new_value):
                                    new_value)
 
 
-class img_ref:
+class ImageReference:
     '''
     Class that encapsules one single image reference inside the Foundry world.
     This class contains several helpful methods and attributes that make it easy
     to understand the image reference.
-    Mainly, the `img_ref` object contains information about where this image
+    Mainly, the `ImgRef` object contains information about where this image
     reference is located in the world.
     For example, if there is a journal entry that makes a reference to
     "worlds/porvenir/handouts/ScytheOfTheHeadlessHorseman.webp", an `img_ref`
@@ -308,12 +301,12 @@ class img_ref:
         self.world_references_owner_obj = world_refs_obj
 
         # Setting the unique ID for this `ref_img`
-        string_to_hash = (self.world_folder + self.core_data_folder +
-                          self.ref_file_path + self.ref_file_type +
-                          str(self.ref_file_line) + str(self.json_address) +
+        string_to_hash = (self.world_folder / self.core_data_folder /
+                          self.ref_file_path / self.ref_file_type /
+                          str(self.ref_file_line) / str(self.json_address) /
                           'img_ref')
 
-        self.ref_id = hashlib.sha256(string_to_hash.encode()).hexdigest()
+        self.ref_id = hashlib.sha256(str(string_to_hash).encode()).hexdigest()
 
         # Looks into the actual content of the reference. Sometimes it is just
         # a string with the filepath to the image. Other times it is a chunk of
@@ -326,7 +319,7 @@ class img_ref:
             img_ref_content, 'html.parser').find() else False
 
         # Setting the attributes that might be edited later.
-        self.set_editable_attributes(img_path_for_ref)
+        self.set_editable_attributes(Path(img_path_for_ref))
 
     def get_img_ref_content(self):
         '''
@@ -391,8 +384,7 @@ class img_ref:
 
         self.img_path_for_ref = img_path_for_ref
 
-        self.ref_img_in_world_folder = True if img_path_for_ref[:len(
-            self.world_folder)] == self.world_folder else False
+        self.ref_img_in_world_folder = self.world_folder in img_path_for_ref.parents
 
         if os.path.isfile(self.img_path_for_ref):
             self.img_path_on_disk = self.img_path_for_ref
@@ -418,7 +410,7 @@ class img_ref:
             img_encoding_mime_temp = mimetypes.guess_type(
                 self.img_path_on_disk)[0]
             img_encoding_mime = img_encoding_mime_temp.split(
-                '/')[1].lower() if img_encoding_mime_temp != None else None
+                '/')[1].lower() if img_encoding_mime_temp is not None else None
 
             if img_encoding_imghdr:
                 self.img_encoding = img_encoding_imghdr
@@ -431,14 +423,14 @@ class img_ref:
 
             self.img_encoding = self.img_encoding.lower()
             if self.img_encoding == 'jpeg':
-                if pathlib.Path(self.img_path_on_disk).suffix[1:].lower(
-                ) == 'jpeg' or pathlib.Path(
-                        self.img_path_on_disk).suffix[1:].lower() == 'jpg':
+                if Path(self.img_path_on_disk).suffix[1:].lower() in {
+                        "jpeg", "jpg"
+                }:
                     self.correct_extension = True
                 else:
                     self.correct_extension = False
             else:
-                self.correct_extension = pathlib.Path(
+                self.correct_extension = Path(
                     self.img_path_on_disk).suffix[1:].lower(
                     ) == self.img_encoding.lower()
         else:
@@ -552,12 +544,12 @@ class img_ref:
         if subprocess_output.returncode != 0:
             # Check the extension/suffix of the current file and generates a
             # temporary copy of the file with the "opposite" extension
-            original_suffix = str(pathlib.Path(self.img_path_for_ref).suffix)
+            original_suffix = str(Path(self.img_path_for_ref).suffix)
             if original_suffix == '.jpg' or original_suffix == '.jpeg':
                 new_suffix = '.png'
             else:
                 new_suffix = '.jpg'
-            temp_img_path = os.path.join(pathlib.Path(self.img_path_for_ref).parent,pathlib.Path(self.img_path_for_ref).stem).replace('\\','/') + new_suffix
+            temp_img_path = os.path.join(Path(self.img_path_for_ref).parent,Path(self.img_path_for_ref).stem).replace('\\','/') + new_suffix
             shutil.copyfile(self.img_path_for_ref, temp_img_path)
 
             # Run the FFMPEG call using the new filename
@@ -705,15 +697,12 @@ class world_refs:
         checked_inputs = input_checker(user_data_folder, world_folder,
                                        core_data_folder, ffmpeg_location, 'n')
 
-        user_data_folder = checked_inputs['user_data_folder']
-        world_folder = checked_inputs['world_folder']
-        core_data_folder = checked_inputs['core_data_folder']
+        self.user_data_folder = Path(checked_inputs['user_data_folder'])
+        self.world_folder = Path(checked_inputs['world_folder'])
+        self.core_data_folder = Path(checked_inputs['core_data_folder'])
         ffmpeg_location = checked_inputs['ffmpeg_location']
 
         # Storing user, world and core folders and ffmeg location
-        self.user_data_folder = user_data_folder.replace('\\', '/')
-        self.world_folder = world_folder.replace('\\', '/')
-        self.core_data_folder = core_data_folder.replace('\\', '/')
         self.ffmpeg_location = ffmpeg_location.replace('\\', '/')
 
         # Reading in the DB and JSON files inside the world
@@ -721,9 +710,9 @@ class world_refs:
 
         # Making the trash folder. This is where all the images to be deleted
         # will go before they are actually deleted.
-        trash_folder = str(os.path.join(world_folder, '_trash'))
-        os.makedirs(trash_folder, exist_ok=True)
-        self.trash_folder = trash_folder
+        trash = Path(self.world_folder / '_trash')
+        trash.mkdir(exist_ok=True)
+        self.trash = trash
 
         # Set of images that need to be moved to the trash
         self.trash_queue = set()
@@ -769,11 +758,11 @@ class world_refs:
 
         list_of_db_files = [
             str(this_path).replace('\\', '/')
-            for this_path in pathlib.Path(world_folder).rglob('*.db')
+            for this_path in Path(world_folder).rglob('*.db')
         ]
         list_of_json_files = [
             str(this_path).replace('\\', '/')
-            for this_path in pathlib.Path(world_folder).rglob('*.json')
+            for this_path in Path(world_folder).rglob('*.json')
         ]
 
         self.db_files = {}
@@ -781,27 +770,15 @@ class world_refs:
 
             # Need to avoid the `settings.db` file
             if this_db_file != str(
-                    pathlib.Path(os.path.join(
-                        world_folder, 'data/settings.db'))).replace('\\', '/'):
-                pass
+                    Path(os.path.join(world_folder,
+                                      'data/settings.db'))).replace('\\', '/'):
                 this_db_file_lines = []
                 # Reading the DB file
-                with open(this_db_file, 'r', encoding="utf-8") as fp:
-
-                    # Initializing process to scan all lines in DB file
-                    line_count = 0
-                    line = fp.readline()
-
-                    # Scanning all lines in DB file
-                    while line:
-
+                with open(this_db_file, encoding="utf-8") as file:
+                    for line in file:
                         # Transforming JSON-like string into a python dict
-                        #line_dict = json.loads(line)
+                        # line_dict = json.loads(line)
                         this_db_file_lines.append(json.loads(line))
-
-                        # Preparing for next row
-                        line_count += 1
-                        line = fp.readline()
 
                 # Adding this DB file's list of dictionaries into the main object
                 self.db_files[this_db_file] = this_db_file_lines
@@ -898,7 +875,7 @@ class world_refs:
 
         # Within each leaf of the dict tree, see if there is a
         # reference to an image.
-        for i, this_item in enumerate(dict_walker(dict_content)):
+        for this_item in dict_walker(dict_content):
 
             this_item_content = this_item[-1]
             if type(this_item_content) == str:
@@ -910,7 +887,6 @@ class world_refs:
                     # Check if leaf is an HTML block
                     if BeautifulSoup(this_img_ref_content,
                                      'html.parser').find():
-
                         # If it is an HTML block, search for images
                         img_html_matches = BeautifulSoup(
                             this_img_ref_content, 'html.parser').findAll("img")
@@ -924,7 +900,7 @@ class world_refs:
 
                         # For every image found, generate a reference_dict
                         for this_img_ref in unique_img_refs_in_html:
-                            this_ref_obj = img_ref(
+                            this_ref_obj = ImageReference(
                                 ref_file_type=json_or_db,
                                 ref_file_path=ref_file_path,
                                 ref_file_line=ref_file_line
@@ -939,7 +915,7 @@ class world_refs:
                     # If the leaf is not an HTML chunk, it's an img reference,
                     # so we just need to add it to the list of references.
                     else:
-                        this_ref_obj = img_ref(
+                        this_ref_obj = ImageReference(
                             ref_file_type=json_or_db,
                             ref_file_path=ref_file_path,
                             ref_file_line=ref_file_line
@@ -976,7 +952,7 @@ class world_refs:
         refs_indexed_by_img = self.get_refs_indexed_by_img()
 
         # Looping over every image found in references
-        for img_counter, this_img_path in enumerate(refs_indexed_by_img):
+        for this_img_path in refs_indexed_by_img:
             temp_ref = refs_indexed_by_img[this_img_path][0]
 
             # Ensuring that we only try to "fix" extensions for images that are
@@ -985,28 +961,22 @@ class world_refs:
                 old_content = temp_ref.get_img_ref_content()
                 old_img_path_for_ref = temp_ref.img_path_for_ref
 
-                new_extension = temp_ref.img_encoding
-
-                new_img_file_path_before_extension = os.path.join(
-                    pathlib.Path(old_img_path_for_ref).parent,
-                    pathlib.Path(old_img_path_for_ref).stem)
+                suffix = f".{temp_ref.img_encoding}"
 
                 new_img_path_for_ref = find_filename_that_doesnt_exist_yet(
-                    new_img_file_path_before_extension,
-                    new_extension).replace('\\', '/')
+                    Path(old_img_path_for_ref), suffix)
 
-                new_content = old_content.replace(old_img_path_for_ref,
-                                                  new_img_path_for_ref)
+                new_content = old_content.replace(str(old_img_path_for_ref),
+                                                  str(new_img_path_for_ref))
 
                 #os.rename(old_img_path_for_ref,new_img_path_for_ref)
                 shutil.copyfile(old_img_path_for_ref, new_img_path_for_ref)
 
                 # After the file on disk was fixed, all the `img_ref`s that
                 # pointed to the old image need to be updated
-                for ref_counter, this_ref in enumerate(
-                        refs_indexed_by_img[this_img_path]):
-                    this_ref.set_editable_attributes(new_img_path_for_ref)
-                    this_ref.push_updated_content_to_world(new_content)
+                for ref in refs_indexed_by_img[this_img_path]:
+                    ref.set_editable_attributes(new_img_path_for_ref)
+                    ref.push_updated_content_to_world(new_content)
 
     def find_all_images_in_world_folder(self):
         '''
@@ -1025,13 +995,9 @@ class world_refs:
         # Using rglob to find multiple patterns:
         types = ('*.jpg', '*.jpeg', '*.png', '*.webp')
         all_images_in_world_folder = []
-        for this_type in types:
+        for file_type in types:
             all_images_in_world_folder.extend(
-                list(pathlib.Path(self.world_folder).rglob(this_type)))
-
-        # Fixing double backslash into forward slash
-        for i, this_img in enumerate(all_images_in_world_folder):
-            all_images_in_world_folder[i] = str(this_img).replace('\\', '/')
+                list(Path(self.world_folder).rglob(file_type)))
 
         return all_images_in_world_folder
 
@@ -1060,15 +1026,14 @@ class world_refs:
         # Looping over every `img_ref`. For each image found, we increment the
         # respective counter.
         for this_ref in self.all_img_refs:
-            if this_ref.img_path_for_ref in all_images_in_world_folder_dict:
-                all_images_in_world_folder_dict[this_ref.img_path_for_ref] += 1
+            if this_ref.img_path_on_disk in all_images_in_world_folder_dict:
+                all_images_in_world_folder_dict[this_ref.img_path_on_disk] += 1
 
         # Fishing out only images whose counters remain at zero.
         unused_images_in_world_folder = []
-        for this_img_in_folder in all_images_in_world_folder_dict:
-            if all_images_in_world_folder_dict[this_img_in_folder] == 0:
-                unused_images_in_world_folder.append(this_img_in_folder)
-
+        for img_in_folder in all_images_in_world_folder_dict:
+            if all_images_in_world_folder_dict[img_in_folder] == 0:
+                unused_images_in_world_folder.append(img_in_folder)
         return unused_images_in_world_folder
 
     def add_unused_images_to_trash_queue(self):
@@ -1088,8 +1053,8 @@ class world_refs:
         )
 
         # Adding all of them to the `trash_queue`
-        for this_img in unused_images_in_world_folder:
-            self.trash_queue.add(this_img.replace('\\', '/'))
+        for img in unused_images_in_world_folder:
+            self.trash_queue.add(img)
 
     def get_broken_refs(self):
         '''
@@ -1113,7 +1078,7 @@ class world_refs:
             if ((this_ref.img_path_on_disk
                  == 'ERROR!!! IMG REFERENCE NOT ON DISK!!!') and
                 (not this_ref.img_ref_external_web_link)) or (
-                    this_ref.img_path_for_ref in self.trash_queue):
+                    this_ref.img_path_on_disk in self.trash_queue):
                 broken_ref_count += 1
                 broken_refs.append(this_ref)
         return broken_refs
@@ -1144,7 +1109,7 @@ class world_refs:
         broken_ref_fixed = False
 
         # Checks if the `img_ref` points to the "modules" folder
-        if img_ref_to_fix.img_path_for_ref[:7] == 'modules':
+        if str(img_ref_to_fix.img_path_for_ref)[:7] == 'modules':
 
             # If it does, we try to swap the "modules" folder for the "world"
             # folder and see if this new file exists on disk. If so, the reference
@@ -1454,10 +1419,9 @@ class world_refs:
                     conversion_return_code = temp_ref.create_webp_copy()
                 if (conversion_return_code == 0) and (os.path.isfile(
                         temp_ref.webp_img_path_for_ref)):
-                    for ref_counter, this_ref in enumerate(
-                            refs_indexed_by_img[this_img_path]):
+                    for this_ref in refs_indexed_by_img[this_img_path]:
                         self.update_one_ref_to_webp(this_ref)
-                self.trash_queue.add(temp_path_for_deletion.replace('\\', '/'))
+                self.trash_queue.add(temp_path_for_deletion)
         print('Scanned 100% of all images.')
 
     def export_all_json_and_db_files(self):
@@ -1532,12 +1496,13 @@ class world_refs:
         -------
         None
 
+
         RETURNS:
         --------
         None
 
         '''
-        for this_file in self.trash_queue:
+        for file in self.trash_queue:
 
             # Making sure that the file exists and that it is actually inside
             # the world folder. This is to prevent accidentally moving images
@@ -1570,7 +1535,7 @@ class world_refs:
 
         '''
         if delete_unreferenced_images:
-            shutil.rmtree(self.trash_folder)
+            shutil.rmtree(self.trash)
 
     def restore_bak_files(self):
         '''
@@ -1587,11 +1552,11 @@ class world_refs:
         '''
         list_of_dbbak_files = [
             str(this_path).replace('\\', '/')
-            for this_path in pathlib.Path(self.world_folder).rglob('*.dbbak')
+            for this_path in Path(self.world_folder).rglob('*.dbbak')
         ]
         list_of_jsonbak_files = [
             str(this_path).replace('\\', '/')
-            for this_path in pathlib.Path(self.world_folder).rglob('*.jsonbak')
+            for this_path in Path(self.world_folder).rglob('*.jsonbak')
         ]
 
         for this_dbbak_file in list_of_dbbak_files:
@@ -1753,7 +1718,7 @@ def input_checker(user_data_folder=None,
     return checked_inputs
 
 
-def find_filename_that_doesnt_exist_yet(file_path_before_extension, extension):
+def find_filename_that_doesnt_exist_yet(file_path, suffix):
     '''
     Function that recursively checks if a specific filename exists or not. The
     function keeps tacking on underscore characters ("_") until it finds a name
@@ -1791,15 +1756,12 @@ def find_filename_that_doesnt_exist_yet(file_path_before_extension, extension):
     # Output:
     # "worlds/porvenir/art/wood-bg_.jpg"
     '''
-    current_filename = file_path_before_extension + '.' + extension
-
-    if os.path.isfile(current_filename):
-        # Recursive call in case the current filename is found on disk
+    path = file_path.with_suffix(suffix)
+    if path.is_file():
         return find_filename_that_doesnt_exist_yet(
-            file_path_before_extension + '_', extension)
+            path.with_stem(path.stem + '_'), suffix)
     else:
-        # If the current filename points to a non-existing file, we're done!
-        return current_filename
+        return path
 
 
 # Function that does all that is needed for world compression in one single command
