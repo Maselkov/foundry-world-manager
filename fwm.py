@@ -16,7 +16,7 @@ world_manager_location = __file__
 sys.path.append(world_manager_location)
 
 # Importing the tool
-import jegasus_world_manager as jwm
+import foundryworldmanager as fwm
 
 # Getting username for default folder path
 username = os.getlogin()
@@ -77,14 +77,14 @@ parser.add_argument(
     type=str,
     metavar='',
     help=
-    r'Flag that determines whether or not to delete unreferenced images. Should be "y" or "n".',
+    'Flag that determines whether or not to delete unreferenced images. Should be "y" or "n".',
     default='n')
 args = parser.parse_args()
 
 # Main function - this function is run automatically when this script is run.
 if __name__ == '__main__':
     # Running the tool to compress the world
-    my_world_refs = jwm.one_liner_compress_world(
+    my_world_refs = fwm.one_liner_compress_world(
         user_data_folder=args.user_data_folder,
         world_folder=args.world_folder,
         core_data_folder=args.core_data_folder,
