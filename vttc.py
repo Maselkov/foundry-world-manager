@@ -16,7 +16,7 @@ world_manager_location = __file__
 sys.path.append(world_manager_location)
 
 # Importing the tool
-import foundryworldmanager as fwm
+import vttcompressor as vttc
 
 # Getting username for default folder path
 username = os.getlogin()
@@ -84,7 +84,7 @@ args = parser.parse_args()
 # Main function - this function is run automatically when this script is run.
 if __name__ == '__main__':
     # Running the tool to compress the world
-    my_world_refs = fwm.one_liner_compress_world(
+    my_world_refs = vttc.one_liner_compress_world(
         user_data_folder=args.user_data_folder,
         world_folder=args.world_folder,
         core_data_folder=args.core_data_folder,
