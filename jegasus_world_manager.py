@@ -1620,13 +1620,11 @@ def input_checker(user_data_folder=None, world_folder=None,
         
     core_data_folder = os.path.normpath(core_data_folder).replace("\\","/")
     if not os.path.isdir(core_data_folder):
-        raise NotADirectoryError(f'The `core_data_folder` supplied does not exist: {core_data_folder}')
-    
-    # !!! FIX HERE FOR CROSS-PLATFORM CHECKING
-    ffmpeg_location = os.path.normpath(ffmpeg_location).replace("\\","/")
-    if not os.path.isfile(ffmpeg_location):
-        raise NotADirectoryError(f'The `ffmpeg_location` supplied does not exist: {ffmpeg_location}')
-    
+
+    if not shutil.which(ffmpeg_location):
+        raise NotADirectoryError(
+            f'ffmpeg executable not found: {ffmpeg_location}')
+
     if delete_unreferenced_images.lower() == 'y':
         delete_unreferenced_images_bool = True
     elif delete_unreferenced_images.lower() == 'n':
