@@ -404,10 +404,14 @@ class img_ref:
                 self.img_path_for_ref).replace('\\', '/')
             self.img_exists = True
         else:
-            self.img_path_on_disk = 'ERROR!!! IMG REFERENCE NOT ON DISK!!!'
-            self.img_exists = False
-            self.img_encoding = None
-
+            path = Path(urllib.parse.unquote(str(self.img_path_for_ref)))
+            if path.is_file():
+                self.img_path_on_disk = path
+                self.img_exists = True
+            else:
+                self.img_path_on_disk = 'ERROR!!! IMG REFERENCE NOT ON DISK!!!'
+                self.img_exists = False
+                self.img_encoding = None
         if self.img_exists:
             img_encoding_imghdr = imghdr.what(self.img_path_on_disk)
 
@@ -457,7 +461,8 @@ class img_ref:
 
         if os.path.isfile(
                 self.img_path_for_ref) and self.ref_img_in_world_folder:
-            trash_folder_location = re.split('\\\\|/', self.img_path_on_disk)
+            trash_folder_location = re.split('\\\\|/',
+                                             str(self.img_path_on_disk))
             trash_folder_location.insert(2, '_trash')
             trash_folder_location = str(
                 os.path.join(*trash_folder_location).replace('\\', '/'))
@@ -528,7 +533,7 @@ class img_ref:
         # None
         '''
         # The actual string that needs to be sent to the command line
-        cmd_call_str = f'"{self.world_references_owner_obj.ffmpeg_location}" -y -i "{self.img_path_for_ref}" -c:v libwebp "{self.webp_img_path_for_ref}" -hide_banner -loglevel error'
+        cmd_call_str = f'"{self.world_references_owner_obj.ffmpeg_location}" -y -i "{self.img_path_on_disk}" -c:v libwebp "{self.webp_img_path_for_ref}" -hide_banner -loglevel error'
 
         # Running terminal command (https://stackoverflow.com/a/48857230/8667016)
         # The exit code here is 0 if the conversion succeeded. If it is anything
@@ -1321,7 +1326,7 @@ class world_refs:
             this_img_refs = this_duplicated_img_dict[img_to_be_replaced]
             for this_ref in this_img_refs:
                 updated_content = this_ref.get_img_ref_content().replace(
-                    this_ref.img_path_for_ref, main_img)
+                    this_ref.img_path_on_disk, main_img)
                 this_ref.set_editable_attributes(main_img)
                 this_ref.push_updated_content_to_world(updated_content)
 
@@ -1368,7 +1373,7 @@ class world_refs:
 
         new_img_path_for_ref = img_ref_to_update.webp_img_path_for_ref
         new_img_ref_content = old_img_ref_content.replace(
-            old_img_path_for_ref, new_img_path_for_ref)
+            str(old_img_path_for_ref), str(new_img_path_for_ref))
 
         img_ref_to_update.set_editable_attributes(new_img_path_for_ref)
         img_ref_to_update.push_updated_content_to_world(new_img_ref_content)
@@ -1537,13 +1542,15 @@ class world_refs:
             # Making sure that the file exists and that it is actually inside
             # the world folder. This is to prevent accidentally moving images
             # from the Foundry Core folder
-            if (os.path.isfile(this_file)
-                    and re.match('.*' + self.world_folder + '.*', this_file)):
-                temp = re.split('\\\\|/', this_file)
-                temp.insert(2, '_trash')
-                trash_name = os.path.join(*temp).replace('\\', '/')
-                os.makedirs(os.path.dirname(trash_name), exist_ok=True)
-                os.rename(this_file, trash_name)
+            exists = file.is_file()
+            if not exists:
+                unquoted = file.with_stem(urllib.parse.unquote(file.stem))
+                if unquoted.is_file():
+                    exists = True
+                    file = unquoted
+            if (exists and re.match('.*' + str(self.world_folder) + '.*',
+                                    str(file))):
+                file.rename(self.trash / file.name)
 
     def empty_trash(self, delete_unreferenced_images=False):
         '''
