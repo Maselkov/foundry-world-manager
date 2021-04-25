@@ -17,8 +17,6 @@ Do not run the tool while your world is running.
 
 ## FFMPEG
 Lastly, you will also need to have access to [FFMPEG](https://www.ffmpeg.org/download.html).
-I personally use the version recommended by Audacity, which can be downloaded
-[here](https://lame.buanzo.org/#lamewindl).
 
 # Compatibility
 
