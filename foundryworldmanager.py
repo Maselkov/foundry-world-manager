@@ -442,17 +442,18 @@ class img_ref:
         self.img_hash = hashlib.md5(open(
             self.img_path_on_disk, 'rb').read()).hexdigest() if (
                 self.img_exists and self.ref_img_in_world_folder) else None
-        self.is_webp = pathlib.Path(
-            self.img_path_for_ref).suffix.lower() == '.webp'
-        self.webp_img_path_for_ref = (os.path.join(
-            pathlib.Path(self.img_path_for_ref).parent,
-            pathlib.Path(self.img_path_for_ref).stem) + '.webp').replace(
-                '\\', '/')
-        self.webp_copy_exists = None if self.is_webp else os.path.isfile(
-            self.webp_img_path_for_ref)
-        self.img_ref_external_web_link = True if (
-            self.img_path_for_ref.find('http:') >= 0
-            or self.img_path_for_ref.find('https:') >= 0) else False
+        self.is_webp = Path(self.img_path_for_ref).suffix.lower() == '.webp'
+        rename_images = True
+        if rename_images:
+            stem = Path(self.img_path_on_disk).stem.replace(" ", "-").lower()
+            stem = re.sub('-+', "-", stem)
+            stem = urllib.parse.quote(stem)
+        self.webp_img_path_for_ref = self.img_path_for_ref.with_stem(
+            stem).with_suffix(".webp")
+        self.webp_copy_exists = None if self.is_webp else self.webp_img_path_for_ref.is_file(
+        )
+        self.img_ref_external_web_link = str(
+            self.img_path_for_ref).startswith("http")
 
         if os.path.isfile(
                 self.img_path_for_ref) and self.ref_img_in_world_folder:
