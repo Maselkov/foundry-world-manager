@@ -1,4 +1,4 @@
-# Foundry World Manager
+# FoundryVTT Asset Compressor
 A Python-based tool that helps manage [FoundryVTT](https://foundryvtt.com/) Worlds.
 The main functionality implemented thus far is to compress all of a World's PNG and
 JPEG images to WEBP. The tool also helps with deduplication of image files.
