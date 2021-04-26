@@ -178,9 +178,9 @@ class ImageReference:
     Main attributes:
         Attributes that never change:
         -----------------------------
-        self.world_folder (STR) : Folder path of the current world
-        self.core_data_folder (STR) : Folder path of the Foundry installation
-        self.ref_file_path (STR) : Indicates the filepath to the file that contains
+        self.world_folder (Path) : Directory path of the current world
+        self.core_data_folder (Path) : Directory path of the Foundry installation
+        self.ref_path (Path) : Indicates the filepath to the file that contains
             this image reference. For example, if an image reference is made
             inside the world's "journal.db" file, the `ref_file_path` would be
             something like "worlds/myworld/data/journal.db"
@@ -196,7 +196,7 @@ class ImageReference:
             NOTE: As with everything else in Python, this line number is zero-indexed.
         self.json_address (LIST) : Full "address" of the reference inside the "db"
             or "json" file.
-        self.world_references_owner_obj (WorldRefs) : Object that "owns"
+        self.world_ref (WorldRefs) : Object that "owns"
             this reference. This is a collection of `img_ref`s.
         self.img_ref_content_is_html (BOOL) : Indicates whether this reference is
             just a simple STRING or if it's an HTML chunk.
@@ -232,9 +232,6 @@ class ImageReference:
         self.img_ref_external_web_link (BOOL) : Indicates whether or not this
             image reference is actually a hyperlink to an external file on
             the web.
-        self.trash_folder_location (STR) : Indicates the folder location of where
-            this file needs to go if it needs to be moved to the trash
-
     '''
     def __init__(self,
                  ref_file_type=None,
@@ -264,7 +261,7 @@ class ImageReference:
             NOTE: As with everything else in Python, this line number is zero-indexed.
         full_json_address (LIST) : Full "address" of an image's reference inside
             the complex JSON dictionary.
-        ref_path (STR) : Actual disk location/filepath of the image being
+        ref_path (Path) : Actual disk location/filepath of the image being
             referenced. Ex: "worlds/porvenir/handouts/ScytheOfTheHeadlessHorseman.webp"
         WorldRefs_obj (OBJECT) : This is an instance of the `WorldRefs` object
             (defined below). The `WorldRefs_obj` attribute points to the `WorldRefs`
@@ -298,9 +295,13 @@ class ImageReference:
         self.ref_file_type = ref_file_type
         self.ref_file_line = ref_file_line
         self.json_address = full_json_address[:-1]
-        self.world_references_owner_obj = WorldRefs_obj
-
-        # Setting the unique ID for this `ref_img`
+        self.world_ref = WorldRefs_obj
+        self.img_hash = None
+        self.is_webp = False
+        self.file_reference = self.world_ref.files[self.ref_file_type][
+            self.ref_file_path]
+        if self.ref_file_type == 'db':
+            self.file_reference = self.file_reference[self.ref_file_line]
         string_to_hash = (self.world_folder / self.core_data_folder /
                           self.ref_file_path / self.ref_file_type /
                           str(self.ref_file_line) / str(self.json_address) /
@@ -323,7 +324,7 @@ class ImageReference:
 
     def get_img_ref_content(self):
         '''
-        Retrieves this `img_ref`'s content from the main world reference object
+        Retrieves this `ImageRefeference`'s content from the main world reference object
 
         INPUTS:
         -------
@@ -343,16 +344,9 @@ class ImageReference:
         # Output:
         # 'worlds/porvenir/handouts/ScytheOfTheHeadlessHorseman.webp'
         '''
-
-        if self.ref_file_type == "db":
-            path_dict = self.world_references_owner_obj.db_files[
-                self.ref_file_path][self.ref_file_line]
-        elif self.ref_file_type == "json":
-            path_dict = self.world_references_owner_obj.json_files[
-                self.ref_file_path]
-        img_ref_content = get_nested_dict_recursive(path_dict,
-                                                    self.json_address)
-        return img_ref_content
+        content = get_nested_dict_recursive(self.file_reference,
+                                            self.json_address)
+        return content
 
     def set_editable_attributes(self, ref_path=None):
         '''
@@ -394,7 +388,7 @@ class ImageReference:
                 self.img_path_on_disk = path
                 self.img_exists = True
             else:
-                self.img_path_on_disk = 'ERROR!!! IMG REFERENCE NOT ON DISK!!!'
+                self.img_path_on_disk = None
                 self.img_exists = False
                 self.img_encoding = None
         if self.img_exists:
@@ -411,9 +405,23 @@ class ImageReference:
                 self.img_encoding = img_encoding_mime
             else:
                 self.img_encoding = None
-
+            self.img_hash = hashlib.md5(
+                open(self.img_path_on_disk, 'rb').read()).hexdigest() if (
+                    self.img_exists and self.ref_img_in_world_folder) else None
+            self.is_webp = Path(self.ref_path).suffix.lower() == '.webp'
+            rename_images = True
+            if rename_images:
+                stem = Path(self.img_path_on_disk).stem.replace(" ",
+                                                                "-").lower()
+                stem = re.sub('-+', "-", stem)
+                stem = urllib.parse.quote(stem)
+            self.webp_ref_path = self.ref_path.with_stem(stem).with_suffix(
+                ".webp")
+            if self.is_webp:
+                self.webp_copy_exists = None
+            else:
+                self.webp_copy_exists = self.webp_ref_path.is_file()
         if self.img_encoding:
-
             self.img_encoding = self.img_encoding.lower()
             if self.img_encoding == 'jpeg':
                 if Path(self.img_path_on_disk).suffix[1:].lower() in {
@@ -428,18 +436,6 @@ class ImageReference:
                     ) == self.img_encoding.lower()
         else:
             self.correct_extension = None
-        self.img_hash = hashlib.md5(open(
-            self.img_path_on_disk, 'rb').read()).hexdigest() if (
-                self.img_exists and self.ref_img_in_world_folder) else None
-        self.is_webp = Path(self.ref_path).suffix.lower() == '.webp'
-        rename_images = True
-        if rename_images:
-            stem = Path(self.img_path_on_disk).stem.replace(" ", "-").lower()
-            stem = re.sub('-+', "-", stem)
-            stem = urllib.parse.quote(stem)
-        self.webp_ref_path = self.ref_path.with_stem(stem).with_suffix(".webp")
-        self.webp_copy_exists = None if self.is_webp else self.webp_ref_path.is_file(
-        )
         self.img_ref_external_web_link = str(self.ref_path).startswith("http")
 
     def print_ref(self):
@@ -476,7 +472,6 @@ class ImageReference:
 
         print_str = f'{self.ref_path} | '
         print_str = print_str + f'{self.img_encoding if self.img_encoding else "404 IMG NOT FOUND"} | '
-        print_str = print_str + f'{self.ref_file_path} {self.ref_file_line if self.ref_file_type == "db" else "-1"} | '
         print_str = print_str + f'{self.json_address} | '
         print_str = print_str + f'{self.get_img_ref_content()[:255]} | '
         print(print_str)
@@ -505,21 +500,12 @@ class ImageReference:
         # None
         '''
         # The actual string that needs to be sent to the command line
-        cmd_call_str = f'"{self.world_references_owner_obj.ffmpeg_location}" -y -i "{self.img_path_on_disk}" -c:v libwebp "{self.webp_ref_path}" -hide_banner -loglevel error'
+        cmd_call_str = f'"{self.world_ref.ffmpeg_location}" -y -i "{self.img_path_on_disk}" -c:v libwebp "{self.webp_ref_path}" -hide_banner -loglevel error'
 
         # Running terminal command (https://stackoverflow.com/a/48857230/8667016)
         # The exit code here is 0 if the conversion succeeded. If it is anything
         # else, it means the conversion process failed.
         subprocess_output = subprocess.run(shlex.split(cmd_call_str))
-
-        # Some files have the incorrect extention. For example, an image that
-        # was compressed using a JPEG protocol but had a PNG extension.
-        # To fix this, I need to check if FFMPEG's conversion succeeds or not.
-        # When FFMPEG fails to convert, I need to try converting it using another
-        # protocol (jpeg or png - the opposite of what was used in the first call)
-        # Note: The section below is commented out because I created a method
-        # that tries to fix the jpeg/png file extension beforehand. Therefore,
-        # this part of the code should be unnecessary.
         return subprocess_output.returncode
 
     def push_updated_content_to_world(self, updated_content):
@@ -546,15 +532,10 @@ class ImageReference:
         # Output:
         # None
         '''
-
-        if self.ref_file_type == 'json':
-            edit_nested_dict_recursive(
-                self.world_references_owner_obj.json_files[self.ref_file_path],
-                self.json_address, updated_content)
-        elif self.ref_file_type == 'db':
-            edit_nested_dict_recursive(
-                self.world_references_owner_obj.db_files[self.ref_file_path][
-                    self.ref_file_line], self.json_address, updated_content)
+        d = self.world_ref.files[self.ref_file_type][self.ref_file_path]
+        if self.ref_file_type == 'db':
+            d = d[self.ref_file_line]
+        edit_nested_dict_recursive(d, self.json_address, updated_content)
 
 
 class WorldRefs:
@@ -649,21 +630,13 @@ class WorldRefs:
         # Output:
         # None
         '''
-
-        # Checking inputs
-        checked_inputs = input_checker(user_data_folder, world_folder,
-                                       core_data_folder, ffmpeg_location, 'n')
-
-        self.user_data_folder = Path(checked_inputs['user_data_folder'])
-        self.world_folder = Path(checked_inputs['world_folder'])
-        self.core_data_folder = Path(checked_inputs['core_data_folder'])
-        ffmpeg_location = checked_inputs['ffmpeg_location']
-
-        # Storing user, world and core folders and ffmeg location
-        self.ffmpeg_location = ffmpeg_location.replace('\\', '/')
+        self.user_data_folder = user_data_folder
+        self.world_folder = world_folder
+        self.core_data_folder = core_data_folder
+        self.ffmpeg_location = ffmpeg_location
 
         # Reading in the DB and JSON files inside the world
-        self.load_db_and_json_files()
+        self.load_data()
 
         # Making the trash folder. This is where all the images to be deleted
         # will go before they are actually deleted.
@@ -677,59 +650,17 @@ class WorldRefs:
         # Finds all the `img_ref` objects inthe world
         self.find_all_img_references_in_world()
 
-    def load_db_and_json_files(self):
-        '''
-        Function that scans the world folder and loads in the contents of the
-        DB and JSON files. This function defines two important attributes from the
-        `WorldRefs` object: self.json_files and self.db_files.
-
-        Attributes set by this function:
-            self.json_files (DICT) : Dictionary that holds the contents of all the
-                JSON files inside the World folder. The structure of this dictionary
-                is as follows:
-                    {'worlds/porvenir/world.json' : {json_dict_content},
-                     'worlds/porvenir/descr.json' : {json_dict_content}}
-            self.db_files (DICT) : Dictionary that holds the contents of all the
-                DB files inside the World folder. The structure of this dictionary
-                is as follows:
-                    {'worlds/porvenir/data/actors.db   : [{json_dict_content},
-                                                          {json_dict_content},
-                                                          {json_dict_content}],
-                     'worlds/porvenir/data/folders.db' : [{json_dict_content},
-                                                          {json_dict_content},
-                                                          {json_dict_content}]
-                     'worlds/porvenir/data/items.db'   : [{json_dict_content},
-                                                          {json_dict_content},
-                                                          {json_dict_content}] }
-
-        INPUTS:
-        -------
-        None
-
-        RETURNS:
-        --------
-        None
-
-        '''
-        world_folder = self.world_folder
-
-        db_paths = [p for p in Path(world_folder).rglob('*.db')]
-        json_paths = [p for p in Path(world_folder).rglob('*.json')]
-
-        self.db_files = {}
-        for path in db_paths:
-            if path != Path(world_folder / 'data/settings.db'):
-                lines = []
+    def load_data(self):
+        self.files = {"json": {}, "db": {}}
+        for path in [p for p in Path(self.world_folder).rglob('*.db')]:
+            if path != Path(self.world_folder / 'data/settings.db'):
                 with open(path, encoding="utf-8") as file:
-                    for line in file:
-                        lines.append(json.loads(line))
-
-                self.db_files[path] = lines
-
+                    lines = [json.loads(line) for line in file]
+                self.files["db"][path] = lines
         self.json_files = {}
-        for path in json_paths:
+        for path in [p for p in Path(self.world_folder).rglob('*.json')]:
             with open(path, 'r', encoding="utf-8") as fp:
-                self.json_files[path] = json.load(fp)
+                self.files["json"][path] = [json.load(fp)]
 
     def find_all_img_references_in_world(self, return_result=False):
         '''
@@ -753,25 +684,13 @@ class WorldRefs:
             the world's JSON and DB files.
 
         '''
-        # List of ALL images referenced in world
         self.all_img_refs = []
-
         self.all_img_refs_by_id = {}
-
-        # Scanning all JSON files for references to images
-        for path in self.json_files:
-            content = self.json_files[path]
-            self.traverse_dict_and_find_all_refs(dict_content=content,
-                                                 ref_file_path=path,
-                                                 json_or_db='json')
-
-        # Scanning all DB files for references to images
-        for path in self.db_files:
-            for i, content in enumerate(self.db_files[path]):
-                self.traverse_dict_and_find_all_refs(dict_content=content,
-                                                     ref_file_path=path,
-                                                     json_or_db='db',
-                                                     ref_file_line=i)
+        for file_type, files in self.files.items():
+            for path, file in files.items():
+                for i, content in enumerate(file):
+                    self.traverse_dict_and_find_all_refs(
+                        content, path, file_type, i)
         if return_result:
             return self.all_img_refs
 
@@ -808,10 +727,7 @@ class WorldRefs:
         None
 
         '''
-        # Regular Expression used to find image files
-        #regex_img_exp = re.compile('.*\.webp|.*\.jpg|.*\.jpeg|.*\.png')
-        #regex_img_exp = re.compile('.*\.webp.*|.*\.jpg.*|.*\.jpeg.*|.*\.png.*')
-        regex_img_exp = re.compile('\.webp|\.jpg|\.jpeg|\.png')
+        regex_img_exp = re.compile(r'\.webp|\.jpg|\.jpeg|\.png')
 
         # Within each leaf of the dict tree, see if there is a
         # reference to an image.
@@ -823,7 +739,6 @@ class WorldRefs:
                 # If an image extension is found, extract the full file path
                 if regex_img_exp.findall(item_content):
                     img_ref_content = item_content
-
                     # Check if leaf is an HTML block
                     if BeautifulSoup(img_ref_content, 'html.parser').find():
                         # If it is an HTML block, search for images
@@ -854,8 +769,8 @@ class WorldRefs:
                     else:
                         ref_obj = ImageReference(ref_file_type=json_or_db,
                                                  ref_file_path=ref_file_path,
-                                                 ref_file_line=ref_file_line if
-                                                 json_or_db == 'db' else None,
+                                                 ref_file_line=ref_file_line
+                                                 if json_or_db == 'db' else 0,
                                                  full_json_address=item,
                                                  ref_path=img_ref_content,
                                                  WorldRefs_obj=self)
@@ -953,22 +868,22 @@ class WorldRefs:
         all_images_in_world_folder = self.find_all_images_in_world_folder()
 
         # Making a counter for each image inside the World folder.
-        all_images_in_world_folder_dict = {}
+        all_images = {}
         for img in all_images_in_world_folder:
-            all_images_in_world_folder_dict[img] = 0
+            all_images[img] = 0
 
         # Looping over every `img_ref`. For each image found, we increment the
         # respective counter.
         for ref in self.all_img_refs:
-            if ref.img_path_on_disk in all_images_in_world_folder_dict:
-                all_images_in_world_folder_dict[ref.img_path_on_disk] += 1
+            if ref.img_path_on_disk in all_images:
+                all_images[ref.img_path_on_disk] += 1
 
         # Fishing out only images whose counters remain at zero.
-        unused_images_in_world_folder = []
-        for img_in_folder in all_images_in_world_folder_dict:
-            if all_images_in_world_folder_dict[img_in_folder] == 0:
-                unused_images_in_world_folder.append(img_in_folder)
-        return unused_images_in_world_folder
+        unused_images = []
+        for image in all_images:
+            if all_images[image] == 0:
+                unused_images.append(image)
+        return unused_images
 
     def add_unused_images_to_trash_queue(self):
         '''
@@ -983,11 +898,10 @@ class WorldRefs:
 
         '''
         # Getting the list of unised images in World folder
-        unused_images_in_world_folder = self.get_all_unused_images_in_world_folder(
-        )
+        unused = self.get_all_unused_images_in_world_folder()
 
         # Adding all of them to the `trash_queue`
-        for img in unused_images_in_world_folder:
+        for img in unused:
             self.trash_queue.add(img)
 
     def get_broken_refs(self):
@@ -1009,8 +923,7 @@ class WorldRefs:
         # Looping over every `img_ref` object searching for references to files
         # that don't exist in disk or that have already been added to the trash queue.
         for ref in self.all_img_refs:
-            if ((ref.img_path_on_disk
-                 == 'ERROR!!! IMG REFERENCE NOT ON DISK!!!') and
+            if ((ref.img_path_on_disk is None) and
                 (not ref.img_ref_external_web_link)) or (ref.img_path_on_disk
                                                          in self.trash_queue):
                 broken_ref_count += 1
@@ -1368,28 +1281,14 @@ class WorldRefs:
         None
 
         '''
-        # Scanning all JSON files for references to images
-        for path in self.json_files:
-            # Backing up current JSON file
-            shutil.copyfile(path, path.with_suffix(path.suffix + "bak"))
-
-            content = self.json_files[path]
-            # Writing JSON files to disk
-            with open(path, 'w', encoding="utf-8") as fout:
-                output = json.dumps(
-                    content, separators=(',', ':'), ensure_ascii=False) + '\n'
-                fout.writelines([output])
-
-        for path in self.db_files:
-            # Backing up current DB file
-            shutil.copyfile(path, path.with_suffix(path.suffix + "bak"))
-
-            # Writing DB files to disk, line by line
-            with open(path, 'w', encoding="utf-8") as fout:
-                for line in self.db_files[path]:
-                    output = json.dumps(
-                        line, separators=(',', ':'), ensure_ascii=False) + '\n'
-                    fout.writelines([output])
+        for files in self.files.values():
+            for path, content in files.items():
+                shutil.copyfile(path, path.with_suffix(path.suffix + "bak"))
+                with open(path, 'w', encoding="utf-8") as file:
+                    lines = (json.dumps(l,
+                                        separators=(',', ':'),
+                                        ensure_ascii=False) for l in content)
+                    file.write("\n".join(lines))
 
     def find_refs_by_img_path(self, img_path_to_search=None):
         '''
@@ -1514,8 +1413,6 @@ def input_checker(user_data_folder=None,
 
     !!!Note: This is also where the working directory is set!
 
-    !!!TODO: I need to update this function when I make the call to FFMPEG
-    work across platforms (Linux & Mac).
 
     INPUTS:
     -------
@@ -1587,7 +1484,7 @@ def input_checker(user_data_folder=None,
 
     checked_inputs = {
         'user_data_folder': user_data_folder,
-        'world_folder': world_folder,
+        'world_folder': Path(world_folder),
         'core_data_folder': core_data_folder,
         'ffmpeg_location': ffmpeg_location,
         'delete_unreferenced_images': delete_unreferenced_images_bool
