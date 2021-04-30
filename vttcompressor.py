@@ -965,7 +965,7 @@ class WorldRefs:
                 str(img_ref_to_fix.ref_path).replace('modules', 'worlds'))
             if new_ref_path.is_file():
                 new_img_content = img_ref_to_fix.get_img_ref_content().replace(
-                    img_ref_to_fix.ref_path, new_ref_path)
+                    str(img_ref_to_fix.ref_path), str(new_ref_path))
                 img_ref_to_fix.set_editable_attributes(new_ref_path)
                 img_ref_to_fix.push_updated_content_to_world(new_img_content)
                 broken_ref_fixed = True
@@ -1134,11 +1134,11 @@ class WorldRefs:
             refs = duplicated_img_dict[img_to_be_replaced]
             for ref in refs:
                 updated_content = ref.get_img_ref_content().replace(
-                    ref.img_path_on_disk, main_img)
+                    str(ref.img_path_on_disk), str(main_img))
                 ref.set_editable_attributes(main_img)
                 ref.push_updated_content_to_world(updated_content)
 
-            self.trash_queue.add(img_to_be_replaced.replace('\\', '/'))
+            self.trash_queue.add(img_to_be_replaced)
 
     def fix_all_sets_of_duplicated_images(self):
         '''
